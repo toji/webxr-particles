@@ -36,21 +36,6 @@
   </head>
   <body>
 
-    <script src="js/three.min.js"></script>
-    <script src="js/SimulationShader.js"></script>
-    <script src="js/GeometryUtils.js"></script>
-    <script src="js/Projector.js"></script>
-    <script src="js/VRControls.js"></script>
-    <script src="js/VREffect.js"></script>
-    <script src="js/ViveController.js"></script>
-    <script src="js/WebVR.js"></script>
-
-    <script src="js/OBJLoader.js"></script>
-
-    <script src="js/leap-0.6.4.min.js"></script>
-    <script src="js/leap-plugins-0.1.6.1.js"></script>
-    <script src="js/leap.rigged-hand-0.1.3.min.js"></script>
-
     <!-- WebGL 2 shaders -->
     <script id="vs-particles-2" type="x-shader/x-vertex">
       uniform float pointSize;
@@ -73,7 +58,14 @@
       }
     </script>
 
-    <script>
+    <script type="module">
+
+      import * as THREE from './js/three/build/three.module.js';
+      import { SimulationShader } from './js/SimulationShader.js';
+      import { Projector } from './js/three/examples/jsm/renderers/Projector.js';
+      import { GeometryUtils } from './js/three/examples/jsm/utils/GeometryUtils.js';
+      import { WEBVR } from './js/three/examples/jsm/vr/WebVR.js';
+
       function getQueryString(name, defaultValue) {
         var query = window.location.search.substring(1);
         var vars = query.split("&");
@@ -102,7 +94,7 @@
       var scene, camera, light, renderer;
       var geometry, geometry2, originGeometry, cube, mesh, material;
       var roomMesh;
-      var projector = new THREE.Projector();
+      var projector = new Projector();
 
       var data, texture, points;
       var transformFeedback;
@@ -111,17 +103,13 @@
 
       var fboParticles, rtTexturePos, rtTexturePos2, simulationShader;
 
-      var particleCount = getQueryValue('particleCount', 500000);
+      var particleCount = getQueryValue('particleCount', 100000);
       var pointSize = getQueryValue('pointSize', 1);
       var skipRemainder = getQueryValue('skipRemainder', 0);
 
       var INT_MAX = 2147483647;
 
-      var maxFingers = 42;
-      var fingers = [];
-      var fingertipSize = 0.05;
-      var handScale = 0.06;
-      var handOffset = new THREE.Vector3(0, roomSize.y/4, -roomSize.z*0.2);
+      var maxColliders = 8;
 
       var pickCoord = new THREE.Vector3(0.0, 0.0, 0.0);
       var pickRay = new THREE.Ray();
@@ -131,14 +119,11 @@
 
       var touchPoints = [];
 
-      var colliders = new Float32Array(maxFingers * 4);
+      var colliders = new Float32Array(maxColliders * 4);
       var colliderMeshes = [];
       var showColliders = false;
 
-      var leapController = new Leap.Controller();
-
-      var vrControls;
-      var effect;
+      const CONTROLLER_COLLIDER_SIZE = 0.075;
       var controller1, controller2;
 
       var isWebGL2 = false;
@@ -193,9 +178,27 @@
         renderer = new THREE.WebGLRenderer( { canvas: canvas, context: gl } );
         renderer.setSize( window.innerWidth, window.innerHeight );
         renderer.sortObjects = false;
+        renderer.vr.enabled = true;
         container.appendChild( renderer.domElement );
 
         document.body.appendChild( getFullscreenButton( renderer ) );
+
+        let btnVR = WEBVR.createButton(
+            renderer, {
+          mode: 'immersive-vr',
+          sessionInit: {requiredFeatures: ['local-floor'],
+                        optionalFeatures: ['dom-overlay-for-handheld-ar']}
+        });
+        btnVR.style.left = 'calc(50% - 110px)';
+        document.body.appendChild(btnVR);
+        let btnAR = WEBVR.createButton(
+            renderer, {
+          mode: 'immersive-ar',
+          sessionInit: {requiredFeatures: ['local-floor'],
+                        optionalFeatures: ['dom-overlay-for-handheld-ar']}
+        });
+        btnAR.style.left = 'calc(50% + 10px)';
+        document.body.appendChild(btnAR);
 
         scene = new THREE.Scene();
 
@@ -205,57 +208,23 @@
         camera.lookAt( new THREE.Vector3(0, roomSize.y/2, -roomSize.z*0.25));
         scene.add( camera );
 
-        effect = new THREE.VREffect( renderer );
+        controller1 = renderer.vr.getController( 0 );
+        scene.add( controller1 );
 
-        vrCamera = undefined;
+        controller2 = renderer.vr.getController( 1 );
+        scene.add( controller2 );
 
-        if ( WEBVR.isAvailable() === true ) {
-          vrCamera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.01, roomSize.z * 10 );
-          scene.add( vrCamera );
+        var controllerMaterial = new THREE.MeshPhongMaterial({ color: 0x00DD22 });
+        var controllerGeometry = new THREE.IcosahedronGeometry(CONTROLLER_COLLIDER_SIZE, 1);
+        controller1.add( new THREE.Mesh(controllerGeometry, controllerMaterial) );
+        controller2.add( new THREE.Mesh(controllerGeometry, controllerMaterial) );
 
-          vrControls = new THREE.VRControls( vrCamera );
-          vrControls.standing = true;
-
-          controller1 = new THREE.ViveController( 0 );
-          controller1.standingMatrix = vrControls.getStandingMatrix();
-          scene.add( controller1 );
-
-          controller2 = new THREE.ViveController( 1 );
-          controller2.standingMatrix = vrControls.getStandingMatrix();
-          scene.add( controller2 );
-
-          var loader = new THREE.OBJLoader();
-          loader.setPath( 'media/models/vive-controller/' );
-          loader.load( 'vr_controller_vive_1_5.obj', function ( object ) {
-
-            var loader = new THREE.TextureLoader();
-            loader.setPath( 'media/models/vive-controller/' );
-
-            var controller = object.children[ 0 ];
-            controller.material.map = loader.load( 'onepointfive_texture.png' );
-            controller.material.specularMap = loader.load( 'onepointfive_spec.png' );
-
-            controller1.add( object.clone() );
-            controller2.add( object.clone() );
-          } );
-
-          WEBVR.getVRDisplay((display) => {
-            document.body.appendChild( WEBVR.getButton(display, canvas) );
-          });
-
-        }
-
-        showColliders = getQueryValue('colliders', 0) != 0;
         var fingerMaterial = new THREE.MeshPhongMaterial({ color: 0x00DD22 });
         var fingerGeometry = new THREE.IcosahedronGeometry(1, 2);
-
-        for (var i = 0; i < maxFingers; ++i) {
-          var finger = {
-            active: false
-          };
+        showColliders = getQueryValue('colliders', 0) != 0;
+        for (var i = 0; i < maxColliders; ++i) {
           colliderMeshes[i] = new THREE.Mesh(fingerGeometry, fingerMaterial);
           scene.add(colliderMeshes[i]);
-          fingers.push(finger);
         }
 
         var textureLoader = new THREE.TextureLoader();
@@ -271,9 +240,8 @@
           new THREE.MeshBasicMaterial({ map: backImage, side: THREE.BackSide }),
           new THREE.MeshBasicMaterial({ map: backImage, side: THREE.BackSide })
         ];
-        var roomMaterial = new THREE.MeshFaceMaterial( roomMaterialArray );
         var roomGeometry = new THREE.BoxGeometry( roomSize.x, roomSize.y, roomSize.z );
-        roomMesh = new THREE.Mesh( roomGeometry, roomMaterial );
+        roomMesh = new THREE.Mesh( roomGeometry, roomMaterialArray );
         roomMesh.doubleSided = true;
         roomMesh.position.y = roomSize.y/2;
         scene.add( roomMesh );
@@ -284,7 +252,7 @@
           var fontLoader = new THREE.FontLoader();
           fontLoader.load( 'media/fonts/helvetiker_bold.typeface.json', function ( font ) {
 
-            var textGeo = new THREE.TextGeometry( "WebGL 2", {
+            var textGeo = new THREE.TextGeometry( "WebXR!", {
               size: 1.0,
               height: 0.25,
               curveSegments: 0,
@@ -303,7 +271,7 @@
             // THREE.js BUG FIX
             particleCount = Math.floor(particleCount / 3) * 3;
 
-            points = THREE.GeometryUtils.randomPointsInGeometry( textGeo, particleCount );
+            points = GeometryUtils.randomPointsInGeometry( textGeo, particleCount );
 
             data = new Float32Array( particleCount * 4 );
             for ( var i = 0, j = 0, l = data.length; i < l; i += 4, j += 1 ) {
@@ -350,7 +318,7 @@
             gl.bindBuffer(gl.ARRAY_BUFFER, originBuffer);
             gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
 
-            simulationShader = new SimulationShader(renderer, maxFingers);
+            simulationShader = new SimulationShader(renderer, maxColliders);
             simulationShader.setColliders(colliders);
 
             mesh = new THREE.Points(geometry, material);
@@ -364,22 +332,8 @@
 
         }
 
-        leapController
-          .use('handHold', {})
-          .use('handEntry', {})
-          .use('riggedHand', {
-            parent: scene,
-            camera: vrCamera,
-            scale: handScale,
-            offset: handOffset,
-            materialOptions: {
-              opacity: showColliders ? 0.5 : 1.0
-            }
-          })
-          .connect();
-
         function onMouseUpdate(ev) {
-          mouseDown = !!ev.buttons;
+          let mouseDown = !!ev.buttons;
           if (mouseDown) {
             mouseCoordQueue.push(canvasToColliderVector(ev.clientX, ev.clientY));
           }
@@ -406,8 +360,7 @@
       function onWindowResize() {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
-        //renderer.setSize( window.innerWidth, window.innerHeight );
-        effect.setSize( window.innerWidth, window.innerHeight );
+        renderer.setSize( window.innerWidth, window.innerHeight );
       }
 
       window.addEventListener( 'resize', onWindowResize, false );
@@ -418,7 +371,8 @@
         pickCoord.z = 0.1;
         pickCoord.unproject(camera);
         pickRay.set(camera.position, pickCoord.sub(camera.position).normalize());
-        var point = pickRay.intersectPlane(clickPlane);
+        var point = new THREE.Vector3();
+        pickRay.intersectPlane(clickPlane, point);
         return point;
       }
 
@@ -430,14 +384,15 @@
         //vrCamera.getWorldDirection(pickCoord);
         //pickCoord.unproject(vrCamera);
         pickRay.set(vrCamera.position, pickCoord.sub(vrCamera.position).normalize());
-        var point = pickRay.intersectPlane(clickPlane);
+        var point = new THREE.Vector3();
+        pickRay.intersectPlane(clickPlane, point);
         return point;
       }
 
       function pointToCollider(index, active, vector, size) {
         var o = index * 4;
 
-        if (index >= maxFingers)
+        if (index >= maxColliders)
           return;
 
         if (active) {
@@ -456,36 +411,8 @@
         }
       }
 
-      function fingerFromBone(bone, fi, size) {
-        if (fi >= fingers.length) return;
-        if (!size) { size = fingertipSize; }
-        bone.updateMatrixWorld();
-        var finger = fingers[fi];
-        finger.active = true;
-        colliderMeshes[fi].position.setFromMatrixPosition(bone.matrixWorld);
-        pointToCollider(fi, finger.active, colliderMeshes[fi].position, size);
-      }
-
       function updateColliders() {
         var fi = 0;
-
-        var frame = leapController.frame();
-        if (frame.hands) {
-          for (var i = 0; i < frame.hands.length; ++i) {
-            var hand = frame.hands[i];
-            var handMesh = hand.data('riggedHand.mesh');
-
-            fingerFromBone(handMesh, fi++, fingertipSize * 2.0);
-
-            for (var j = 0; j < handMesh.fingers.length; ++j) {
-              var meshFinger = handMesh.fingers[j];
-              fingerFromBone(meshFinger.tip, fi++, fingertipSize * 0.8);
-              fingerFromBone(meshFinger.dip, fi++, fingertipSize * 0.9);
-              fingerFromBone(meshFinger.pip, fi++);
-              fingerFromBone(meshFinger, fi++, fingertipSize * 1.1);
-            }
-          }
-        }
 
         while (mouseCoordQueue.length) {
           pointToCollider(fi, true, mouseCoordQueue.shift(), 0.05);
@@ -497,34 +424,31 @@
           fi++;
         }
 
-        if (effect.isPresenting) {
-          if (buttonPushed) {
-            var gazePoint = vrCameraToColliderVector();
-            if (gazePoint) {
-              pointToCollider(fi++, true, gazePoint, 0.075);
-            }
-          }
+        var vector = new THREE.Vector3();
+        vector.setFromMatrixPosition( controller1.matrixWorld );
+        pointToCollider(fi++, true, vector, CONTROLLER_COLLIDER_SIZE);
 
-          var vector = new THREE.Vector3();
-          vector.setFromMatrixPosition( controller1.matrixWorld );
-          pointToCollider(fi++, true, vector, 0.075);
+        vector.setFromMatrixPosition( controller2.matrixWorld );
+        pointToCollider(fi++, true, vector, CONTROLLER_COLLIDER_SIZE);
 
-          vector.setFromMatrixPosition( controller2.matrixWorld );
-          pointToCollider(fi++, true, vector, 0.075);
-
-          var buttonPushed = false;
-          var gamepads = navigator.getGamepads();
-          for (var i = 0; i < gamepads.length; ++i) {
-            var gamepad = gamepads[i];
-            if (gamepad && gamepad.buttons[0].pressed) {
-              buttonPushed = true;
-            }
+        /*var buttonPushed = false;
+        var gamepads = navigator.getGamepads();
+        for (var i = 0; i < gamepads.length; ++i) {
+          var gamepad = gamepads[i];
+          if (gamepad && gamepad.buttons[0].pressed) {
+            buttonPushed = true;
           }
         }
 
+        if (buttonPushed) {
+          var gazePoint = vrCameraToColliderVector();
+          if (gazePoint) {
+            pointToCollider(fi++, true, gazePoint, 0.075);
+          }
+        }*/
+
         // Turn off any remaining colliders.
-        for (; fi < fingers.length; ++fi) {
-          fingers[fi].active = false;
+        for (; fi < maxColliders; ++fi) {
           pointToCollider(fi, false);
         }
       }
@@ -540,12 +464,20 @@
         var targetVelAttrib = target.attributes['velocity'];
         var targetRandomSeedAttrib = target.attributes['randomSeed'];
 
-        var sourcePosBuffer = renderer.properties.get(sourcePosAttrib).__webglBuffer;
-        var sourceVelBuffer = renderer.properties.get(sourceVelAttrib).__webglBuffer;
-        var sourceRandomSeedBuffer = renderer.properties.get(sourceRandomSeedAttrib).__webglBuffer;
-        var targetPosBuffer = renderer.properties.get(targetPosAttrib).__webglBuffer;
-        var targetVelBuffer = renderer.properties.get(targetVelAttrib).__webglBuffer;
-        var targetRandomSeedBuffer = renderer.properties.get(targetRandomSeedAttrib).__webglBuffer;
+        function getWebGLBuffer(attribute) {
+          let webglBuffer = renderer.attributes.get(attribute);
+          if (webglBuffer) {
+            return webglBuffer.buffer;
+          }
+          return null;
+        }
+
+        var sourcePosBuffer = getWebGLBuffer(sourcePosAttrib);
+        var sourceVelBuffer = getWebGLBuffer(sourceVelAttrib);
+        var sourceRandomSeedBuffer = getWebGLBuffer(sourceRandomSeedAttrib);
+        var targetPosBuffer = getWebGLBuffer(targetPosAttrib);
+        var targetVelBuffer = getWebGLBuffer(targetVelAttrib);
+        var targetRandomSeedBuffer = getWebGLBuffer(targetRandomSeedAttrib);
 
         if (targetPosBuffer && sourcePosBuffer) {
           shader.bind();
@@ -601,12 +533,6 @@
       var fixedStep = 16.666666;
       var remainder = 0;
       function render(t) {
-        effect.requestAnimationFrame( render );
-
-        if (vrControls) {
-          vrControls.update();
-        }
-
         if (isWebGL2 && mesh) {
           updateColliders();
 
@@ -621,17 +547,17 @@
             simulationShader.setTime(lastTime);
 
             if ( frameId % 2 === 0 ) {
-              transformFeedbackPass( renderer.context, simulationShader, geometry2, geometry );
+              transformFeedbackPass( renderer.getContext(), simulationShader, geometry2, geometry );
               mesh.geometry = geometry2;
             } else {
-              transformFeedbackPass( renderer.context, simulationShader, geometry, geometry2 );
+              transformFeedbackPass( renderer.getContext(), simulationShader, geometry, geometry2 );
               mesh.geometry = geometry;
             }
 
             frameId++;
           }
 
-          material.uniforms.pointSize.value = effect.isPresenting ? pointSize * 2 : pointSize;
+          material.uniforms.pointSize.value = renderer.vr.isPresenting() ? pointSize * 2 : pointSize;
 
           // Ugly hack to make the particle mesh always draw last
           scene.remove( mesh ); scene.add( mesh );
@@ -645,12 +571,12 @@
           simulationShader.setTime(t);
         }
 
-        effect.render( scene, effect.isPresenting ? vrCamera : camera );
+        renderer.render( scene, camera );
       }
 
       init();
 
-      requestAnimationFrame(render);
+      renderer.setAnimationLoop( render );
 
     </script>
   </body>
