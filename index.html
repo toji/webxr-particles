@@ -158,6 +158,10 @@
 
       }
 
+      function inAR() {
+        let session = renderer.vr.getSession();
+        return session && session.environmentBlendMode && session.environmentBlendMode != 'opaque';
+      }
 
       function init() {
         container = document.createElement( 'div' );
@@ -166,9 +170,9 @@
         canvas = document.createElement( 'canvas' );
 
         // Try creating a WebGL 2 context first
-        gl = canvas.getContext( 'webgl2', { antialias: false } );
+        gl = canvas.getContext( 'webgl2', { antialias: false, xrCompatible: true } );
         if (!gl) {
-          gl = canvas.getContext( 'experimental-webgl2', { antialias: false } );
+          gl = canvas.getContext( 'experimental-webgl2', { antialias: false, xrCompatible: true } );
         }
 
         isWebGL2 = !!gl;
@@ -244,8 +248,7 @@
 
         renderer.vr.addEventListener('sessionstart', (ev) => {
           // Hide the room mesh if we're in an AR device.
-          let session = renderer.vr.getSession();
-          if (session.environmentBlendMode && session.environmentBlendMode != 'opaque') {
+          if (inAR()) {
             roomMesh.visible = false;
           }
         });
@@ -527,12 +530,16 @@
           gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
 
           // Avoid messing with THREE.js's WebGL state
+          renderer.state.reset();
+
           // TODO(kbr): Further Diagnosis
           //gl.disableVertexAttribArray( shader.attributes.position );
           //gl.disableVertexAttribArray( shader.attributes.velocity );
           //gl.disableVertexAttribArray( shader.attributes.origin );
           gl.disableVertexAttribArray( shader.attributes.randomSeed );
           //gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+
         }
       }
 
@@ -564,7 +571,7 @@
             frameId++;
           }
 
-          material.uniforms.pointSize.value = pointSize;
+          material.uniforms.pointSize.value = inAR() ? pointSize * 2.0 : pointSize;
 
           // Ugly hack to make the particle mesh always draw last
           scene.remove( mesh ); scene.add( mesh );
