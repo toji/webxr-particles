@@ -258,6 +258,7 @@ var WEBVR = {
 			message.href = 'https://webvr.info';
 			message.innerHTML = 'WEBVR NOT SUPPORTED';
 
+			message.style.display = 'none';
 			message.style.left = 'calc(50% - 90px)';
 			message.style.width = '180px';
 			message.style.textDecoration = 'none';

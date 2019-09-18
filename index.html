@@ -104,7 +104,7 @@
       var fboParticles, rtTexturePos, rtTexturePos2, simulationShader;
 
       var particleCount = getQueryValue('particleCount', 100000);
-      var pointSize = getQueryValue('pointSize', 1);
+      var pointSize = getQueryValue('pointSize', 2);
       var skipRemainder = getQueryValue('skipRemainder', 0);
 
       var INT_MAX = 2147483647;
@@ -186,16 +186,14 @@
         let btnVR = WEBVR.createButton(
             renderer, {
           mode: 'immersive-vr',
-          sessionInit: {requiredFeatures: ['local-floor'],
-                        optionalFeatures: ['dom-overlay-for-handheld-ar']}
+          sessionInit: {requiredFeatures: ['local-floor']}
         });
         btnVR.style.left = 'calc(50% - 110px)';
         document.body.appendChild(btnVR);
         let btnAR = WEBVR.createButton(
             renderer, {
           mode: 'immersive-ar',
-          sessionInit: {requiredFeatures: ['local-floor'],
-                        optionalFeatures: ['dom-overlay-for-handheld-ar']}
+          sessionInit: {requiredFeatures: ['local-floor']}
         });
         btnAR.style.left = 'calc(50% + 10px)';
         document.body.appendChild(btnAR);
@@ -246,6 +244,17 @@
         roomMesh.position.y = roomSize.y/2;
         scene.add( roomMesh );
 
+        renderer.vr.addEventListener('sessionstart', (ev) => {
+          // Hide the room mesh if we're in an AR device.
+          let session = renderer.vr.getSession();
+          if (session.environmentBlendMode && session.environmentBlendMode != 'opaque') {
+            roomMesh.visible = false;
+          }
+        });
+        renderer.vr.addEventListener('sessionend', (ev) => {
+          roomMesh.visible = true;
+        });
+
         if (isWebGL2) {
           // Start Creation of DataTexture
 
@@ -253,7 +262,7 @@
           fontLoader.load( 'media/fonts/helvetiker_bold.typeface.json', function ( font ) {
 
             var textGeo = new THREE.TextGeometry( "WebXR!", {
-              size: 1.0,
+              size: 0.7,
               height: 0.25,
               curveSegments: 0,
               font: font,
@@ -557,7 +566,7 @@
             frameId++;
           }
 
-          material.uniforms.pointSize.value = renderer.vr.isPresenting() ? pointSize * 2 : pointSize;
+          material.uniforms.pointSize.value = pointSize;
 
           // Ugly hack to make the particle mesh always draw last
           scene.remove( mesh ); scene.add( mesh );
