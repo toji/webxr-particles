@@ -34,6 +34,9 @@
   </head>
   <body>
 
+    <!-- For Magic Leap Support -->
+    <script src="js/three/examples/jsm/vr/HelioWebXRPolyfill.js"></script>
+
     <!-- WebGL 2 shaders -->
     <script id="vs-particles-2" type="x-shader/x-vertex">
       uniform float pointSize;
@@ -159,6 +162,9 @@
       }
 
       function inAR() {
+        if (!('getSession' in renderer.vr)) {
+          return false;
+        }
         let session = renderer.vr.getSession();
         return session && session.environmentBlendMode && session.environmentBlendMode != 'opaque';
       }
@@ -250,10 +256,17 @@
           // Hide the room mesh if we're in an AR device.
           if (inAR()) {
             roomMesh.visible = false;
+            controller1.visible = false;
+            controller2.visible = false;
+          } else {
+            controller1.visible = true;
+            controller2.visible = true;
           }
         });
         renderer.vr.addEventListener('sessionend', (ev) => {
           roomMesh.visible = true;
+          controller1.visible = false;
+          controller2.visible = false;
         });
 
         if (isWebGL2) {
