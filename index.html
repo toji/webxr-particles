@@ -126,6 +126,7 @@
 
       const CONTROLLER_COLLIDER_SIZE = 0.075;
       var controller1, controller2;
+      var controllerMesh1, controllerMesh2;
 
       var isWebGL2 = false;
 
@@ -222,8 +223,10 @@
 
         var controllerMaterial = new THREE.MeshPhongMaterial({ color: 0x00DD22 });
         var controllerGeometry = new THREE.IcosahedronGeometry(CONTROLLER_COLLIDER_SIZE, 1);
-        controller1.add( new THREE.Mesh(controllerGeometry, controllerMaterial) );
-        controller2.add( new THREE.Mesh(controllerGeometry, controllerMaterial) );
+        controllerMesh1 = new THREE.Mesh(controllerGeometry, controllerMaterial);
+        controllerMesh2 = new THREE.Mesh(controllerGeometry, controllerMaterial);
+        controller1.add( controllerMesh1 );
+        controller2.add( controllerMesh2 );
 
         var fingerMaterial = new THREE.MeshPhongMaterial({ color: 0x00DD22 });
         var fingerGeometry = new THREE.IcosahedronGeometry(1, 2);
@@ -256,17 +259,17 @@
           // Hide the room mesh if we're in an AR device.
           if (inAR()) {
             roomMesh.visible = false;
-            controller1.visible = false;
-            controller2.visible = false;
+            controllerMesh1.visible = false;
+            controllerMesh2.visible = false;
           } else {
-            controller1.visible = true;
-            controller2.visible = true;
+            controllerMesh1.visible = true;
+            controllerMesh2.visible = true;
           }
         });
         renderer.vr.addEventListener('sessionend', (ev) => {
           roomMesh.visible = true;
-          controller1.visible = false;
-          controller2.visible = false;
+          controllerMesh1.visible = false;
+          controllerMesh2.visible = false;
         });
 
         if (isWebGL2) {
