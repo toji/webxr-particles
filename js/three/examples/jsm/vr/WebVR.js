@@ -192,7 +192,7 @@ var WEBVR = {
 
 		}
 
-		if ( 'xr' in navigator && 'supportsSession' in navigator.xr ) {
+		if ( 'xr' in navigator && 'isSessionSupported' in navigator.xr ) {
 
 			var button = document.createElement( 'button' );
 			button.style.display = 'none';
@@ -200,7 +200,13 @@ var WEBVR = {
 			stylizeElement( button );
 
 			var mode = (options && options.mode) || 'immersive-vr';
-			navigator.xr.supportsSession( mode ).then( showEnterXR ).catch( showXRNotFound );
+			navigator.xr.isSessionSupported( mode ).then ( (supported) => {
+				if (!supported) {
+					showXRNotFound();
+				} else {
+					showEnterXR();
+				}
+			} ).catch( showXRNotFound );
 
 			return button;
 
